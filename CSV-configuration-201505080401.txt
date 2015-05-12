@@ -1,0 +1,96 @@
+{
+  "config.version" : "2.0",
+  "config.project.from.csv" : "true",
+  "config.encoding" : "UTF-8",
+  "config.email.suffix" : "@",
+  "config.field.mappings" : {
+    "owner" : {
+      "jira.field" : "reporter"
+    },
+    "Project name" : {
+      "jira.field" : "project.name"
+    },
+    "IssueType" : {
+      "jira.field" : "issuetype"
+    },
+    "importance" : {
+      "jira.field" : "priority"
+    },
+    "description" : {
+      "jira.field" : "description"
+    },
+    "title" : {
+      "jira.field" : "summary"
+    },
+    "dateUpdated" : {
+      "jira.field" : "updated"
+    },
+    "labels" : {
+      "jira.field" : "labels"
+    },
+    "dateCreated" : {
+      "jira.field" : "created"
+    },
+    "Project key" : {
+      "jira.field" : "project.key"
+    },
+    "attachment" : {
+      "jira.field" : "attachment"
+    },
+    "comment" : {
+      "jira.field" : "comment"
+    },
+    "assignee" : {
+      "jira.field" : "assignee"
+    },
+    "Component" : {
+      "jira.field" : "components"
+    },
+    "milestone_title" : {
+      "jira.field" : "fixVersions"
+    },
+    "Resolution" : {
+      "jira.field" : "resolution"
+    },
+    "status" : {
+      "jira.field" : "status"
+    }
+  },
+  "config.value.mappings" : {
+    "importance" : {
+      "Major" : "3",
+      "Critical" : "2",
+      "Blocker" : "1"
+    },
+    "IssueType" : {
+      "Bug" : "1"
+    },
+    "Component" : {
+      "documentation" : "documentation",
+      "Build Infrastructure" : "Build Infrastructure"
+    },
+    "milestone_title" : {
+      "1.0" : "1.0",
+      "1.1" : "1.1",
+      "0.9" : "0.9"
+    },
+    "Resolution" : {
+      "Fixed" : "1"
+    },
+    "labels" : {
+      "low-hanging-fruit" : "low-hanging-fruit"
+    },
+    "status" : {
+      "Resolved" : "5"
+    }
+  },
+  "config.delimiter" : ",",
+  "config.project" : {
+    "project.key" : "",
+    "project.description" : null,
+    "project.url" : null,
+    "project.name" : "",
+    "project.lead" : "alchen99"
+  },
+  "config.date.format" : "yyyyMMddHHmmss"
+}

@@ -19,18 +19,18 @@ namespace JiraCSV
         // These bits need to be customised!
         // *****
         // This is the URL to your JIRA server.
-        static string jiraBaseURL = "http://jira.example.org/";
+        static string jiraBaseURL = "http://localhost:8080/";
         // Where are all of the files created by the Python export script?
-        static string localBugsDirectory = @"C:\";
+        static string localBugsDirectory = @"D:\LP2JIRA\trafodion";
         // What is the URL where you've temporarily stored all of the attachments, including the bug XML files? Note the trailing /
-        static string attachmentsTempURL = "http://tmp.example.org/";
+        static string attachmentsTempURL = "http://localhost:8080/attach/";
         // Where is the name mappings file for those users that exist on JIRA but don't have an entry that
         // will match their LP name?
-        static string nameMappingFile = @"C:\Mappings.txt";
+        static string nameMappingFile = @"D:\LP2JIRA\Mappings.txt";
         // What is the JIRA Project Name?
-        static string jiraProjectName = "JIRA Project";
+        static string jiraProjectName = "Trafodion";
         // What is the JIRA Project Key?
-        static string jiraProjectKey = "JIP";
+        static string jiraProjectKey = "TRAFODION";
         // ****
         // End of customisation section
         // ****
@@ -194,7 +194,9 @@ namespace JiraCSV
             int messageCount = 1; //reserve 1 for launchpad bug id
             int lpCommentCount = 0;
             int commentCount = 0;
-            int attachmentCount = 0; 
+            int attachmentCount = 0;
+            int componentCount = 0;
+            int labelCount = 0;
             // count the multiple fields
             foreach (FileInfo file in dir.GetFiles())
             {
@@ -212,6 +214,12 @@ namespace JiraCSV
 
                 if (attachmentCount < doc.GetElementsByTagName("attachment").Count)
                     attachmentCount = doc.GetElementsByTagName("attachment").Count;
+
+                if (componentCount < doc.GetElementsByTagName("component").Count)
+                    componentCount = doc.GetElementsByTagName("component").Count;
+
+                if (labelCount < doc.GetElementsByTagName("label").Count)
+                    labelCount = doc.GetElementsByTagName("label").Count;
             }
 
             commentCount = messageCount + lpCommentCount;
@@ -234,6 +242,12 @@ namespace JiraCSV
             table.Columns.Add("status", typeof(string));
             table.Columns.Add("importance", typeof(string));
             table.Columns.Add("milestone_title", typeof(string));
+
+            for (int i = 0; i < componentCount + 1; i++)
+                table.Columns.Add("Component" + i.ToString(), typeof(string));
+
+            for (int i = 0; i < labelCount + 1; i++)
+                table.Columns.Add("labels" + i.ToString(), typeof(string));
 
             for (int i = 0; i < attachmentCount + 1; i++)
                 table.Columns.Add("attachment" + (i + 1).ToString(), typeof(string));
@@ -398,8 +412,12 @@ namespace JiraCSV
 
                 if (row["status"].Equals("Fix Committed") || row["status"].Equals("Fix Released"))
                 {
-                    row["status"] = "Closed";
+                    row["status"] = "Resolved";
                     row["resolution"] = "Fixed";
+                }
+                else if (row["status"].Equals("Confirmed") || row["status"].Equals("Triaged"))
+                {
+                    row["status"] = "In Progress";
                 }
                 else if (row["status"].Equals("Won't Fix"))
                 {
@@ -409,25 +427,40 @@ namespace JiraCSV
                 else if (row["status"].Equals("Invalid"))
                 {
                     row["status"] = "Closed";
-                    row["resolution"] = "Not a Bug";
+                    row["resolution"] = "Invalid";
                 }
                 else if (row["status"].Equals("Incomplete"))
                 {
                     row["status"] = "Closed";
                     row["resolution"] = "Incomplete";
                 }
+                else if (row["status"].Equals("Opinion"))
+                {
+                    row["status"] = "Closed";
+                    row["resolution"] = "Later";
+                }
 
                 row["importance"] = doc.GetElementsByTagName("importance")[0].InnerText;
 
                 if (row["importance"].Equals("Wishlist"))
                 {
-                    row["IssueType"] = "Task";
+                    row["IssueType"] = "Wish";
                     row["importance"] = "Minor";
                 }
                 else
                     row["IssueType"] = "Bug";
 
                 row["milestone_title"] = doc.GetElementsByTagName("milestone_title")[0].InnerText;
+
+                for (int i = 0; i < doc.GetElementsByTagName("component").Count; i++)
+                {
+                    row["component" + i] = doc.GetElementsByTagName("component")[i].InnerText;
+                }
+
+                for (int i = 0; i < doc.GetElementsByTagName("label").Count; i++)
+                {
+                    row["labels" + i] = doc.GetElementsByTagName("label")[i].InnerText;
+                }
 
                 // attachments
                 attachmentAmount = 0;
@@ -478,6 +511,10 @@ namespace JiraCSV
                         caption = "comment";
                     else if (caption.StartsWith("attachment"))
                         caption = "attachment";
+                    else if (caption.StartsWith("Component"))
+                        caption = "Component";
+                    else if (caption.StartsWith("labels"))
+                        caption = "labels";
 
                     WriteItem(stream, caption, true);
 

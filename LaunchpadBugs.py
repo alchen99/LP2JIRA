@@ -12,7 +12,7 @@ from pprint import pprint
 from launchpadlib.launchpad import Launchpad
 import dateutil.parser
 
-CONST_TEAM = "launchpad-team-name-here"
+CONST_TEAM = "trafodion"
 
 def no_credential():
     print "Can't proceed without Launchpad credential."
@@ -46,8 +46,13 @@ class Bug:
 
         p = launchpad.projects[CONST_TEAM]
         print p.display_name
-        #bugTasks = p.searchTasks(status=["New","Incomplete","Opinion","Invalid","Won't Fix","Expired","Confirmed","Triaged","In Progress","Fix Committed","Fix Released","Incomplete (with response)","Incomplete (without response)"])
-        bugTasks = p.searchTasks(status=["New","Confirmed","Fix Committed"],information_type=['Public','Public Security','Private Security','Private','Proprietary','Embargoed'])
+        #bugTasks = p.searchTasks(search_text="file formats")
+        #bugTasks = p.searchTasks(status=["Fix Released"],tags=["infrastructure"],search_text="CDN")
+        #bugTasks = p.searchTasks(tags=["infrastructure"])
+        #bugTasks = p.searchTasks(status=["Incomplete (with response)","Incomplete (without response)"])
+        bugTasks = p.searchTasks(status=["New","Incomplete","Opinion","Invalid","Won't Fix","Expired","Confirmed","Triaged","In Progress","Fix Committed","Fix Released","Incomplete (with response)","Incomplete (without response)"])
+        #bugTasks = p.searchTasks(status=["New","Confirmed","Fix Committed"],information_type=['Public','Public Security','Private Security','Private','Proprietary','Embargoed'])
+        #bugTasks = p.searchTasks(status=["New","Incomplete","Opinion","Invalid","Won't Fix","Expired","Confirmed","Triaged","In Progress","Fix Committed","Fix Released","Incomplete (with response)","Incomplete (without response)"],tags=['infrastructure'])
         
         print "Number of bugs: " + str(len(bugTasks))
         bugHasAttachments = 0
@@ -141,21 +146,43 @@ class Bug:
                 xmlBug.addNode("owner", reportedBy)
                 xmlBug.addNode("assignee", assignedTo)
                 xmlBug.addNode("milestone_link", milestone_link, "api_links")
-                xmlBug.addNode("milestone_title", milestone_title)
+                xmlBug.addNode("milestone_title", milestone_title[11:])
                 xmlBug.addNode("duplicate_link", duplicate_link)
                 xmlBug.addNode("duplicate_bug_id", duplicateBugId)
 
                 bugTitle = bug.title
                 bugStatus = bugTask.status
-                bugImportance = bugTask.importance
+                if bugTask.status.startswith("Incomplete"):
+					bugStatus = "Incomplete"
+				
+				# Bug Importance Map
+                bug_importance_map = {'Critical':'Blocker', 'High':'Critical', 'Medium':'Major', 'Low':'Minor'}
+                if bugTask.importance == "Undecided" or bugTask.importance == "Wishlist":
+					bugImportance = bugTask.importance
+                else:
+					bugImportance = bug_importance_map[bugTask.importance]
+					
                 dateCreated = bugTask.date_created
 
                 xmlBug.addNode("title", bugTitle)
                 xmlBug.addNode("status", bugStatus)
                 xmlBug.addNode("importance", bugImportance)
                 xmlBug.addNode("created", str(dateCreated))
-                xmlBug.addCData("description", bug.description)
 
+                if bug.tags != None :
+					print "Tags: " + ', '.join(bug.tags)
+					label_tags = ['data-corruption', 'regression', 'low-hanging-fruit', 'ops', 'performance', 'crash', 'hang']
+					for tag in bug.tags:
+						if tag == "infrastructure":
+							xmlBug.addNode("component", "Build Infrastructure")
+						elif tag not in label_tags:
+							xmlBug.addNode("component", tag)
+						elif tag in label_tags:
+							xmlBug.addNode("label", tag)
+                else:
+                    print "Tags: None"
+
+                xmlBug.addCData("description", bug.description)
                 xmlBug.addNode("linked_branches_collection_link", bug.linked_branches_collection_link, "api_links")
                 xmlBug.addNode("activity_link", bug.activity_collection_link, "api_links")
 
