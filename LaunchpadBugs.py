@@ -5,18 +5,22 @@ import xml.dom.minidom
 import httplib
 import urllib
 import sys
+import optparse
 import os
 import simplejson
 import logging
 from pprint import pprint
 from launchpadlib.launchpad import Launchpad
 import dateutil.parser
+#import pdb
 
 CONST_TEAM = "trafodion"
+
 
 def no_credential():
     print "Can't proceed without Launchpad credential."
     sys.exit()
+
 
 def cleanID(id):
     # If this is a URL, return the leaf element
@@ -30,6 +34,39 @@ def cleanID(id):
         if temp[0] == '~':
             temp = temp[1:]
         return temp
+
+
+class Blueprint:
+    createCsv = False
+    LOG_FILENAME = 'logging_launchpad_bp.out' 
+
+    logging.basicConfig(filename=LOG_FILENAME,level=logging.DEBUG)
+
+    if createCsv:    
+        row1written = False
+
+    def __init__(self):
+        #pdb.set_trace()
+        lp = Launchpad.login_anonymously('LaunchpadBugs.py', 'production', version="devel")
+        #lp = Launchpad.login_with('LaunchpadBugs.py','staging',credential_save_failed=no_credential)
+
+        # launchpad json
+        lpJson = Launchpad.login_with('lplib.cookbook.json_fetcher', 'production', '.lplib-json_fetcher-cache',credential_save_failed=no_credential)
+        # authenticated browser object
+        jBrowser = lpJson._browser
+
+        proj = lp.projects[CONST_TEAM]
+        print proj.display_name
+
+        all_spec_collection = proj.all_specifications_collection_link
+        jResult = jBrowser.get(all_spec_collection) 
+        jResult = simplejson.loads(jResult)
+
+        print "Number of blueprints: " + str(jResult["total_size"])
+
+        for entry in jResult["entries"]:
+            print "Blueprint name : " + entry["name"]
+
     
 class Bug:
     createCsv = False
@@ -47,10 +84,10 @@ class Bug:
         p = launchpad.projects[CONST_TEAM]
         print p.display_name
         #bugTasks = p.searchTasks(search_text="file formats")
-        #bugTasks = p.searchTasks(status=["Fix Released"],tags=["infrastructure"],search_text="CDN")
+        bugTasks = p.searchTasks(status=["Fix Released"],tags=["infrastructure"],search_text="CDN")
         #bugTasks = p.searchTasks(tags=["infrastructure"])
         #bugTasks = p.searchTasks(status=["Incomplete (with response)","Incomplete (without response)"])
-        bugTasks = p.searchTasks(status=["New","Incomplete","Opinion","Invalid","Won't Fix","Expired","Confirmed","Triaged","In Progress","Fix Committed","Fix Released","Incomplete (with response)","Incomplete (without response)"])
+        #bugTasks = p.searchTasks(status=["New","Incomplete","Opinion","Invalid","Won't Fix","Expired","Confirmed","Triaged","In Progress","Fix Committed","Fix Released","Incomplete (with response)","Incomplete (without response)"])
         #bugTasks = p.searchTasks(status=["New","Confirmed","Fix Committed"],information_type=['Public','Public Security','Private Security','Private','Proprietary','Embargoed'])
         #bugTasks = p.searchTasks(status=["New","Incomplete","Opinion","Invalid","Won't Fix","Expired","Confirmed","Triaged","In Progress","Fix Committed","Fix Released","Incomplete (with response)","Incomplete (without response)"],tags=['infrastructure'])
         
@@ -153,15 +190,15 @@ class Bug:
                 bugTitle = bug.title
                 bugStatus = bugTask.status
                 if bugTask.status.startswith("Incomplete"):
-					bugStatus = "Incomplete"
-				
-				# Bug Importance Map
+                    bugStatus = "Incomplete"
+                
+                # Bug Importance Map
                 bug_importance_map = {'Critical':'Blocker', 'High':'Critical', 'Medium':'Major', 'Low':'Minor'}
                 if bugTask.importance == "Undecided" or bugTask.importance == "Wishlist":
-					bugImportance = bugTask.importance
+                    bugImportance = bugTask.importance
                 else:
-					bugImportance = bug_importance_map[bugTask.importance]
-					
+                    bugImportance = bug_importance_map[bugTask.importance]
+                    
                 dateCreated = bugTask.date_created
 
                 xmlBug.addNode("title", bugTitle)
@@ -170,15 +207,15 @@ class Bug:
                 xmlBug.addNode("created", str(dateCreated))
 
                 if bug.tags != None :
-					print "Tags: " + ', '.join(bug.tags)
-					label_tags = ['data-corruption', 'regression', 'low-hanging-fruit', 'ops', 'performance', 'crash', 'hang']
-					for tag in bug.tags:
-						if tag == "infrastructure":
-							xmlBug.addNode("component", "Build Infrastructure")
-						elif tag not in label_tags:
-							xmlBug.addNode("component", tag)
-						elif tag in label_tags:
-							xmlBug.addNode("label", tag)
+                    print "Tags: " + ', '.join(bug.tags)
+                    label_tags = ['data-corruption', 'regression', 'low-hanging-fruit', 'ops', 'performance', 'crash', 'hang']
+                    for tag in bug.tags:
+                        if tag == "infrastructure":
+                            xmlBug.addNode("component", "Build Infrastructure")
+                        elif tag not in label_tags:
+                            xmlBug.addNode("component", tag)
+                        elif tag in label_tags:
+                            xmlBug.addNode("label", tag)
                 else:
                     print "Tags: None"
 
@@ -301,7 +338,8 @@ class Bug:
         print "Max messages on one bug: %s" % (maxMessages)
     
         if self.createCsv:
-            UnicodeWriter.createJiraCsv(csvWriter, "maria", bugTitle, assignedTo, reportedBy, bug.description, "", bugStatus, bugStatus, messages, str(dateCreated), "", "", "bug", "", "launchpad", bugImportance, bugStatus, bugStatus, "", "", "")
+            UnicodeWriter.createJiraCsv(csvWriter, "trafodion", bugTitle, assignedTo, reportedBy, bug.description, "", bugStatus, bugStatus, messages, str(dateCreated), "", "", "bug", "", "launchpad", bugImportance, bugStatus, bugStatus, "", "", "")
+
 
 class BugXmlDoc:
 
@@ -624,5 +662,36 @@ class UnicodeWriter:
         
         csvWriter.writerow(row)
 
+
+#----------------------------------------------------------------------------
 # start the script
-Bug()
+#----------------------------------------------------------------------------
+
+# parse arguments
+option_list = [
+    # No need to ad '-h' or '-help', optparse automatically adds these options
+
+    optparse.make_option('', '--bug', action='store_true', dest='lpbugs', default=True,
+                         help=''),
+    optparse.make_option('', '--bp', action='store_true', dest='lpbps', default=False,
+                         help='')
+]
+
+usage = 'usage: %prog [-h|--help|<options>]'
+parser = optparse.OptionParser(usage=usage, option_list=option_list)
+
+# OptionParser gets the options out, whatever is not preceeded by
+# an option is considered args.
+(options, args) = parser.parse_args()
+
+# we are not expecting args right now
+if args:
+    parse.error('Invalid argment(s) found: ' + str(args))
+
+# check options
+if options.lpbugs:
+    print "INFO: Processing Launchpad Bugs ..."
+    Bug()
+elif options.lpbps:
+    print "INFO: Processing Launchpad Blueprints ..."
+    Blueprint()
