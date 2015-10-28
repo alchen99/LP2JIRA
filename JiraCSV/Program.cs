@@ -19,18 +19,23 @@ namespace JiraCSV
         // These bits need to be customised!
         // *****
         // This is the URL to your JIRA server.
-        static string jiraBaseURL = "http://localhost:8080/";
+        //static string jiraBaseURL = "http://localhost:8080/";
+        static string jiraBaseURL = "https://issues.apache.org/jira/";
         // Where are all of the files created by the Python export script?
         static string localBugsDirectory = @"D:\LP2JIRA\trafodion";
         // What is the URL where you've temporarily stored all of the attachments, including the bug XML files? Note the trailing /
-        static string attachmentsTempURL = "http://localhost:8080/attach/";
+        static string attachmentsTempURL = "http://cdn.trafodion.org/jiraDocs/";
         // Where is the name mappings file for those users that exist on JIRA but don't have an entry that
         // will match their LP name?
         static string nameMappingFile = @"D:\LP2JIRA\Mappings.txt";
         // What is the JIRA Project Name?
-        static string jiraProjectName = "Trafodion";
+        static string jiraProjectName = "Apache Trafodion";
         // What is the JIRA Project Key?
         static string jiraProjectKey = "TRAFODION";
+        // JIRA placeholder user. If this is blank then JIRA will use the logged in user's information instead
+        static string jiraTempUser = "apachetrafodion";
+        // LaunchPad Blueprint starting number. Should be bigger than the largest LaunchPad Blueprint number being exported
+        static int bpStartNumber = 2500000;
         // ****
         // End of customisation section
         // ****
@@ -148,7 +153,7 @@ namespace JiraCSV
 
                     while ((line = file.ReadLine()) != null)
                     {
-                        string[] split = Regex.Split(line, ",");
+                        string[] split = Regex.Split(line, ":");
                         Console.WriteLine("Mapping {0} to {1}", split[0], split[1]);
                         jiraNameCache.Add(split[0], split[1]);
                     }
@@ -169,26 +174,7 @@ namespace JiraCSV
             DirectoryInfo dir = new DirectoryInfo(localBugsDirectory);
 
             //Hashtable existingUserNamesInJira = new Hashtable();
-            //existingUserNamesInJira.Add("Kolbe", "kolbe");
-            //existingUserNamesInJira.Add("Igor Babaev", "igor");
-            //existingUserNamesInJira.Add("Hartmut Holzgraefe", "hholzgra");
-            //existingUserNamesInJira.Add("Timour Katchaounov", "timour");
-            //existingUserNamesInJira.Add("Stewart Smith", "stewart");
-            //existingUserNamesInJira.Add("Elena Stepanova", "elenst");
-            //existingUserNamesInJira.Add("Michael Widenius", "monty");
-            //existingUserNamesInJira.Add("Eric Bergen", "ebergen");
-            //existingUserNamesInJira.Add("Oleksandr \"Sanja\" Byelkin", "sanja");
-            //existingUserNamesInJira.Add("Sergey Petrunia", "psergey");
-            //existingUserNamesInJira.Add("Vladislav Vaintroub", "wlad");
-            //existingUserNamesInJira.Add("wlad", "wlad");
-            //existingUserNamesInJira.Add("Sergei", "serg");
-            //existingUserNamesInJira.Add("Kristian Nielsen", "knielsen");
-            //existingUserNamesInJira.Add("Alexey Botchkov", "holyfoot");
-            //existingUserNamesInJira.Add("Mark Callaghan", "mdcallag");
-            //existingUserNamesInJira.Add("Simon J Mudd", "sjmudd");
-            //existingUserNamesInJira.Add("Axel Schwenke", "axel");
-            //existingUserNamesInJira.Add("Daniel Bartholomew", "dbart");
-            //existingUserNamesInJira.Add("Colin Charles", "colin");
+            //existingUserNamesInJira.Add("Some User", "someuser");
 
             XmlDocument doc;
             int messageCount = 1; //reserve 1 for launchpad bug id
@@ -197,9 +183,14 @@ namespace JiraCSV
             int attachmentCount = 0;
             int componentCount = 0;
             int labelCount = 0;
+            int linkedBugCount = 0;
+            int workItemCount = 0;
+
             // count the multiple fields
             foreach (FileInfo file in dir.GetFiles())
             {
+                Console.WriteLine("Counting file {0}", file.FullName);
+
                 if (!file.Extension.ToLower().Equals(".xml"))
                     continue;
 
@@ -220,6 +211,12 @@ namespace JiraCSV
 
                 if (labelCount < doc.GetElementsByTagName("label").Count)
                     labelCount = doc.GetElementsByTagName("label").Count;
+
+                if (doc.GetElementsByTagName("linked_bugs").Count > 0 && linkedBugCount < doc.GetElementsByTagName("linked_bugs")[0].ChildNodes.Count)
+                    linkedBugCount = doc.GetElementsByTagName("linked_bugs")[0].ChildNodes.Count;
+
+                if (doc.GetElementsByTagName("work_items").Count > 0 && workItemCount < doc.GetElementsByTagName("work_items")[0].ChildNodes.Count)
+                    workItemCount = doc.GetElementsByTagName("work_items")[0].ChildNodes.Count;
             }
 
             commentCount = messageCount + lpCommentCount;
@@ -227,9 +224,18 @@ namespace JiraCSV
             DataTable table = new DataTable();
             table.Columns.Add("Project name", typeof(string));
             table.Columns.Add("Project key", typeof(string));
+            table.Columns.Add("Issue ID", typeof(string));
+            table.Columns.Add("Parent ID", typeof(string));
             table.Columns.Add("IssueType", typeof(string));
+            table.Columns.Add("importance", typeof(string));
+            table.Columns.Add("status", typeof(string));
             table.Columns.Add("Resolution", typeof(string));
+            table.Columns.Add("External Issue URL", typeof(string));
             table.Columns.Add("title", typeof(string));
+
+            for (int i = 0; i < linkedBugCount + 1; i++)
+                table.Columns.Add("LinkedBug" + i.ToString(), typeof(string));
+
             table.Columns.Add("description", typeof(string));
 
             for (int i = 0; i < commentCount; i++)
@@ -239,8 +245,6 @@ namespace JiraCSV
             table.Columns.Add("dateUpdated", typeof(string));
             table.Columns.Add("owner", typeof(string));
             table.Columns.Add("assignee", typeof(string));
-            table.Columns.Add("status", typeof(string));
-            table.Columns.Add("importance", typeof(string));
             table.Columns.Add("milestone_title", typeof(string));
 
             for (int i = 0; i < componentCount + 1; i++)
@@ -252,15 +256,13 @@ namespace JiraCSV
             for (int i = 0; i < attachmentCount + 1; i++)
                 table.Columns.Add("attachment" + (i + 1).ToString(), typeof(string));
             
-            DataRow row;
-            // hasky:/media/backup/archive/rasmus/
+            DataRow row, rowTask;
             string attachmentLink = "";
             string attachmentFilename = "";
             string attachmentOwner = "";
             string attachmentTimestamp = "";
             string commentOwner = "";
             string commentTimestamp = "";
-            DateTime dtCommentTimestamp;
             string commentSubject = "";
             string commentText = "";
             string message = "";
@@ -276,6 +278,7 @@ namespace JiraCSV
             string bugAssignee = "";
             int lastInsertedComment = 0;
             string convertedName = "";
+            int bpAddNumber = 0;
 
             foreach (FileInfo file in dir.GetFiles())
             {
@@ -292,11 +295,30 @@ namespace JiraCSV
                 row["Project key"] = jiraProjectKey;
 
                 launchpadBugId = doc.DocumentElement.Attributes["id"].Value;
-                row["comment1"] = "Launchpad bug id: " + launchpadBugId;
 
-                Console.WriteLine("Processing bug {0}", launchpadBugId);
-
-                row["title"] = "LP:" + launchpadBugId + " - " + doc.GetElementsByTagName("title")[0].InnerText;
+                // check to see if we are processing a bug or a blueprint
+                if (doc.DocumentElement.Name.Equals("launchpad-bp"))
+                {
+                    row["IssueType"] = "New Feature";
+                    row["Issue ID"] = (bpStartNumber + bpAddNumber).ToString();
+                    bpAddNumber++;
+                    row["comment1"] = "Launchpad Blueprint id: [" + launchpadBugId + "|https://blueprints.launchpad.net/traodion/+spec/" + launchpadBugId + "]";
+                    Console.WriteLine("Processing Blueprint {0}", launchpadBugId);
+                    row["title"] = "LP Blueprint: " + launchpadBugId + " - " + doc.GetElementsByTagName("title")[0].InnerText;
+                    launchpadBugId = "BP-" + launchpadBugId;
+                    row["External Issue URL"] = doc.GetElementsByTagName("api_links")[0].ChildNodes[2].InnerText;
+                }
+                else
+                {
+                    row["IssueType"] = "Bug";
+                    row["Issue ID"] = launchpadBugId;
+                    row["comment1"] = "Launchpad bug id: [" + launchpadBugId + "|https://bugs.launchpad.net/trafodion/+bug/" + launchpadBugId + "]";
+                    Console.WriteLine("Processing bug {0}", launchpadBugId);
+                    row["title"] = "LP Bug: " + launchpadBugId + " - " + doc.GetElementsByTagName("title")[0].InnerText;
+                    launchpadBugId = "Bug-" + launchpadBugId;
+                    row["External Issue URL"] = doc.GetElementsByTagName("bug_web_link")[0].InnerText;
+                }
+                              
                 row["description"] = doc.GetElementsByTagName("description")[0].InnerText;
 
                 string compare = "";
@@ -316,12 +338,13 @@ namespace JiraCSV
                         commentOwner = doc.GetElementsByTagName("comments")[0].ChildNodes[i].ChildNodes[0].InnerText;
 
                         convertedName = ConvertToUser(commentOwner);
-                        if (String.IsNullOrEmpty(convertedName))
+                        if (String.IsNullOrEmpty(convertedName) || convertedName.Equals(jiraTempUser))
                         {
-                            // Don't modify commentOwner - it won't be matched by JIRA and will be replaced by
-                            // the name of the logged-on user when importing. Instead, insert the name into the
-                            // comment text.
-                            commentText = "Submitted by " + commentOwner + Environment.NewLine + doc.GetElementsByTagName("comments")[0].ChildNodes[i].ChildNodes[2].InnerText;
+                            // Default if not matched or blank, JIRA will replace commentOwner with the name of the logged-on user when importing. 
+                            // Instead, insert the name into the text.
+                            // In our case we want the user to be matched to another placeholder user
+                            commentText = doc.GetElementsByTagName("comments")[0].ChildNodes[i].ChildNodes[2].InnerText + Environment.NewLine + Environment.NewLine + "Submitted by LaunchPad User " + commentOwner;
+                            commentOwner = jiraTempUser;
                         }
                         else
                         {
@@ -368,12 +391,13 @@ namespace JiraCSV
                         messageOwner = doc.GetElementsByTagName("messages")[0].ChildNodes[i].Attributes["owner"].Value;
 
                         convertedName = ConvertToUser(messageOwner);
-                        if (String.IsNullOrEmpty(convertedName))
+                        if (String.IsNullOrEmpty(convertedName) || convertedName.Equals(jiraTempUser))
                         {
-                            // Don't modify messageOwner - it won't be matched by JIRA and will be replaced by
-                            // the name of the logged-on user when importing. Instead, insert the name into the
-                            // text.
-                            messageTitle = "Submitted by " + messageOwner + System.Environment.NewLine + messageTitle;
+                            // Default if not matched or blank, JIRA will replace messageOwner with the name of the logged-on user when importing. 
+                            // Instead, insert the name into the text.
+                            // In our case we want the user to be matched to another placeholder user
+                            messageTitle = messageTitle + System.Environment.NewLine + System.Environment.NewLine + "Submitted by LaunchPad User " + messageOwner;
+                            messageOwner = jiraTempUser;
                         }
                         else
                         {
@@ -391,11 +415,21 @@ namespace JiraCSV
                 convertedName = ConvertToUser(bugAssignee);
                 if (String.IsNullOrEmpty(convertedName) && !String.IsNullOrEmpty(bugAssignee.Trim()))
                 {
-                    // Don't modify bugOwner - it won't be matched by JIRA and will be replaced by
-                    // the name of the logged-on user when importing. Instead, insert the name into the
-                    // text, but only if we had an assignee in the first place (the IsNullOrEmpty test).
-                    row["description"] = "Assigned to " + bugAssignee + System.Environment.NewLine + row["description"];
-                    row["assignee"] = bugAssignee;
+                    // Default if not matched or blank, JIRA will replace assignee with the name of the logged-on user when importing.
+                    // Instead, insert the name into the text
+                    // In our case we want the user to be matched to another placeholder user
+                    //row["description"] = "Assigned to LaunchPad User " + bugAssignee + System.Environment.NewLine + row["description"];
+                    row["description"] = row["description"] + System.Environment.NewLine + "Assigned to LaunchPad User " + bugAssignee;
+                    row["assignee"] = jiraTempUser;
+                }
+                else if (!String.IsNullOrEmpty(convertedName) && convertedName.Equals(jiraTempUser))
+                {
+                    // Default if not matched or blank, JIRA will replace assignee with the name of the logged-on user when importing.
+                    // Instead, insert the name into the text
+                    // In our case we want the user to be matched to another placeholder user
+                    //row["description"] = "Assigned to LaunchPad User " + bugAssignee + System.Environment.NewLine + row["description"];
+                    row["description"] = row["description"] + System.Environment.NewLine + "Assigned to LaunchPad User " + bugAssignee;
+                    row["assignee"] = jiraTempUser;
                 }
                 else
                     row["assignee"] = convertedName;
@@ -410,10 +444,20 @@ namespace JiraCSV
 
                 row["status"] = doc.GetElementsByTagName("status")[0].InnerText;
 
-                if (row["status"].Equals("Fix Committed") || row["status"].Equals("Fix Released"))
+                if (row["status"].Equals("Fix Released"))
+                {
+                    row["status"] = "Closed";
+                    row["Resolution"] = "Fixed";
+                }
+                else if (row["status"].Equals("Fix Committed"))
                 {
                     row["status"] = "Resolved";
-                    row["resolution"] = "Fixed";
+                    row["Resolution"] = "Fixed";
+                }
+                else if (row["status"].Equals("Implemented"))
+                {
+                    row["status"] = "Resolved";
+                    row["Resolution"] = "Implemented";
                 }
                 else if (row["status"].Equals("Confirmed") || row["status"].Equals("Triaged"))
                 {
@@ -421,23 +465,23 @@ namespace JiraCSV
                 }
                 else if (row["status"].Equals("Won't Fix"))
                 {
-                    row["status"] = "Closed";
-                    row["resolution"] = "Won't Fix";
+                    row["status"] = "Resolved";
+                    row["Resolution"] = "Won't Fix";
                 }
                 else if (row["status"].Equals("Invalid"))
                 {
-                    row["status"] = "Closed";
-                    row["resolution"] = "Invalid";
+                    row["status"] = "Resolved";
+                    row["Resolution"] = "Invalid";
                 }
                 else if (row["status"].Equals("Incomplete"))
                 {
-                    row["status"] = "Closed";
-                    row["resolution"] = "Incomplete";
+                    row["status"] = "Resolved";
+                    row["Resolution"] = "Incomplete";
                 }
-                else if (row["status"].Equals("Opinion"))
+                else if (row["status"].Equals("Opinion") || row["status"].Equals("Later"))
                 {
-                    row["status"] = "Closed";
-                    row["resolution"] = "Later";
+                    row["status"] = "Resolved";
+                    row["Resolution"] = "Later";
                 }
 
                 row["importance"] = doc.GetElementsByTagName("importance")[0].InnerText;
@@ -447,11 +491,20 @@ namespace JiraCSV
                     row["IssueType"] = "Wish";
                     row["importance"] = "Minor";
                 }
+
+                if (!String.IsNullOrEmpty(doc.GetElementsByTagName("milestone_title")[0].InnerText))
+                {
+                    if (doc.GetElementsByTagName("milestone_title")[0].InnerText.Equals("2.0")) {
+                        row["milestone_title"] = doc.GetElementsByTagName("milestone_title")[0].InnerText + "-incubating";
+                    } else {
+                        row["milestone_title"] = doc.GetElementsByTagName("milestone_title")[0].InnerText + " (pre-incubation)";
+                    }
+                }
                 else
-                    row["IssueType"] = "Bug";
-
-                row["milestone_title"] = doc.GetElementsByTagName("milestone_title")[0].InnerText;
-
+                {
+                    row["milestone_title"] = doc.GetElementsByTagName("milestone_title")[0].InnerText;
+                }
+                
                 for (int i = 0; i < doc.GetElementsByTagName("component").Count; i++)
                 {
                     row["component" + i] = doc.GetElementsByTagName("component")[i].InnerText;
@@ -460,6 +513,15 @@ namespace JiraCSV
                 for (int i = 0; i < doc.GetElementsByTagName("label").Count; i++)
                 {
                     row["labels" + i] = doc.GetElementsByTagName("label")[i].InnerText;
+                }
+
+                // linked_bugs
+                if (doc.GetElementsByTagName("linked_bugs").Count > 0)
+                {
+                    for (int i = 0; i < doc.GetElementsByTagName("linked_bugs")[0].ChildNodes.Count; i++)
+                    {
+                        row["LinkedBug" + i] = doc.GetElementsByTagName("linked_bugs")[0].ChildNodes[i].ChildNodes[0].InnerText;
+                    }
                 }
 
                 // attachments
@@ -480,9 +542,66 @@ namespace JiraCSV
                 }
 
                 // add xml export of the bug itself as attachment
-                row["attachment" + (attachmentAmount + 1).ToString()] = DateTime.Now.ToString("yyyyMMddHHmmss") + ";"+bugOwner+";" + "LPexportBug" + launchpadBugId + ".xml" + ";" + attachmentsTempURL + "LPexportBug" + launchpadBugId + ".xml";
+                row["attachment" + (attachmentAmount + 1).ToString()] = DateTime.Now.ToString("yyyyMMddHHmmss") + ";"+bugOwner+";" + "LPexport" + launchpadBugId + ".xml" + ";" + attachmentsTempURL + "LPexport" + launchpadBugId + ".xml";
 
                 table.Rows.Add(row);
+
+                // check for work_items (Blueprints only).
+                // add a new row for every work item found
+                if (launchpadBugId.StartsWith("BP") && doc.GetElementsByTagName("work_items").Count > 0)
+                {
+
+
+                    // go through each child and set some fields
+                    for (int i = 0; i < doc.GetElementsByTagName("work_items")[0].ChildNodes.Count; i++)
+                    {
+                        rowTask = table.NewRow();
+                        rowTask["Project name"] = row["Project name"];
+                        rowTask["Project key"] = row["Project key"];
+                        rowTask["Parent ID"] = row["Issue ID"];
+                        rowTask["IssueType"] = "Sub-task";
+                        rowTask["Importance"] = row["Importance"];
+                        rowTask["dateCreated"] = row["dateCreated"];
+                        rowTask["dateUpdated"] = row["dateUpdated"];
+                        rowTask["owner"] = row["owner"];
+                        rowTask["assignee"] = row["assignee"];
+                        rowTask["milestone_title"] = row["milestone_title"];
+                        rowTask["Resolution"] = "";
+                        rowTask["Issue ID"] = (bpStartNumber + bpAddNumber).ToString();
+                        bpAddNumber++;
+                        rowTask["title"] = doc.GetElementsByTagName("work_items")[0].ChildNodes[i].ChildNodes[0].InnerText;
+                        rowTask["status"] = doc.GetElementsByTagName("work_items")[0].ChildNodes[i].ChildNodes[1].InnerText;
+
+                        if (row["Resolution"].Equals("Implemented") && rowTask["status"].Equals("DONE"))
+                        {
+                            rowTask["status"] = "Closed";
+                            rowTask["Resolution"] = "Implemented";
+                        }
+                        else if (rowTask["status"].Equals("DONE"))
+                        {
+                            rowTask["status"] = "Resolved";
+                            rowTask["Resolution"] = "Implemented";                           
+                        }
+                        else if (rowTask["status"].Equals("TODO"))
+                        {
+                            rowTask["status"] = "Open";
+                        }
+                        else if (rowTask["status"].Equals("INPROGRESS"))
+                        {
+                            rowTask["status"] = "In Progress";
+                        }
+                        else if (rowTask["status"].Equals("POSTPONED"))
+                        {
+                            rowTask["status"] = "Resolved";
+                            rowTask["Resolution"] = "Later";
+                        }
+
+                        for (int j = 0; j < componentCount + 1; j++)
+                            rowTask["Component" + j.ToString()] = row["Component" + j.ToString()];
+
+                        table.Rows.Add(rowTask);
+                    }
+                }
 
                 if (debug)
                 {
@@ -515,6 +634,8 @@ namespace JiraCSV
                         caption = "Component";
                     else if (caption.StartsWith("labels"))
                         caption = "labels";
+                    else if (caption.StartsWith("LinkedBug"))
+                        caption = "LinkedBug";
 
                     WriteItem(stream, caption, true);
 

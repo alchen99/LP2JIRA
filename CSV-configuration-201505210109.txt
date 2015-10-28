@@ -1,0 +1,157 @@
+{
+  "config.version" : "2.0",
+  "config.project.from.csv" : "true",
+  "config.encoding" : "UTF-8",
+  "config.email.suffix" : "@",
+  "config.field.mappings" : {
+    "owner" : {
+      "jira.field" : "reporter"
+    },
+    "Project name" : {
+      "jira.field" : "project.name"
+    },
+    "importance" : {
+      "jira.field" : "priority"
+    },
+    "Parent ID" : {
+      "jira.field" : "subtask-parent-id"
+    },
+    "IssueType" : {
+      "jira.field" : "issuetype"
+    },
+    "description" : {
+      "jira.field" : "description"
+    },
+    "title" : {
+      "jira.field" : "summary"
+    },
+    "labels" : {
+      "jira.field" : "labels"
+    },
+    "dateUpdated" : {
+      "jira.field" : "updated"
+    },
+    "dateCreated" : {
+      "jira.field" : "created"
+    },
+    "attachment" : {
+      "jira.field" : "attachment"
+    },
+    "Project key" : {
+      "jira.field" : "project.key"
+    },
+    "LinkedBug" : {
+      "link.type" : "10003"
+    },
+    "comment" : {
+      "jira.field" : "comment"
+    },
+    "assignee" : {
+      "jira.field" : "assignee"
+    },
+    "Issue ID" : {
+      "jira.field" : "issue-id"
+    },
+    "Component" : {
+      "jira.field" : "components"
+    },
+    "milestone_title" : {
+      "jira.field" : "fixVersions"
+    },
+    "status" : {
+      "jira.field" : "status"
+    },
+    "Resolution" : {
+      "jira.field" : "resolution"
+    }
+  },
+  "config.value.mappings" : {
+    "importance" : {
+      "Undefined" : "7",
+      "Major" : "3",
+      "Undecided" : "7",
+      "Critical" : "2",
+      "Minor" : "4",
+      "Blocker" : "1"
+    },
+    "Component" : {
+      "connectivity-mxosrvr" : "connectivity-mxosrvr",
+      "client-odbc-windows" : "client-odbc-windows",
+      "sql-cmu" : "sql-cmu",
+      "client-jdbc-t4" : "client-jdbc-t4",
+      "documentation" : "documentation",
+      "client-ci" : "client-ci",
+      "sql-security" : "sql-security",
+      "client-odbc-linux" : "client-odbc-linux",
+      "foundation" : "foundation",
+      "dev-environment" : "dev-environment",
+      "Build Infrastructure" : "Build Infrastructure",
+      "sql-cmp" : "sql-cmp",
+      "connectivity-dcs" : "connectivity-dcs",
+      "connectivity-general" : "connectivity-general",
+      "installer" : "installer",
+      "client-jdbc-t2" : "client-jdbc-t2",
+      "sql-general" : "sql-general",
+      "sql-exe" : "sql-exe",
+      "dtm" : "dtm",
+      "db-utility-odb" : "db-utility-odb"
+    },
+    "milestone_title" : {
+      "1.0" : "1.0",
+      "2.0" : "2.0",
+      "1.1" : "1.1",
+      "0.6 \"Beta\"" : "0.6",
+      "0.7" : "0.7",
+      "0.8" : "0.8",
+      "0.9" : "0.9",
+      "1.0.1" : "1.0.1"
+    },
+    "status" : {
+      "New" : "1",
+      "Closed" : "6",
+      "Patch Available" : "10002",
+      "Resolved" : "5",
+      "In Progress" : "3",
+      "Open" : "1"
+    },
+    "labels" : {
+      "hive" : "hive",
+      "hang" : "hang",
+      "commit" : "commit",
+      "tochar" : "tochar",
+      "low-hanging-fruit" : "low-hanging-fruit",
+      "trafci" : "trafci",
+      "performance" : "performance",
+      "ops" : "ops",
+      "notsqccacheable" : "notsqccacheable",
+      "null" : "null",
+      "reject" : "reject",
+      "bulkloader" : "bulkloader",
+      "repos" : "repos",
+      "seapilot" : "seapilot",
+      "8605" : "8605",
+      "data-corruption" : "data-corruption",
+      "connection" : "connection",
+      "log4cpp" : "log4cpp",
+      "transaction" : "transaction",
+      "hbase" : "hbase"
+    },
+    "Resolution" : {
+      "Incomplete" : "4",
+      "Later" : "10003",
+      "Implemented" : "10005",
+      "Won't Fix" : "2",
+      "Invalid" : "10002",
+      "Fixed" : "1"
+    }
+  },
+  "config.delimiter" : ",",
+  "config.project" : {
+    "project.key" : "",
+    "project.description" : null,
+    "project.url" : null,
+    "project.name" : "",
+    "project.lead" : "alchen99"
+  },
+  "config.date.format" : "yyyyMMddHHmmss"
+}

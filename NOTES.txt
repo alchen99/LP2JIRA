@@ -1,0 +1,17 @@
+Locations
+=========
+http://localhost:8080/secure/Dashboard.jspa
+
+D:\Program Files\Atlassian\JIRA\atlassian-jira\attach
+
+
+TODO
+====
+Remove control characters from Bug 1336644
+
+http://localhost:8080/plugins/servlet/upm#manage
+
+curl -i -H "Accept: application/json" -H "Content-Type: application/json" -H "Authorization: Basic SOMEKEY==" -X GET https://issues.apache.org/jira/rest/api/latest/user/search?username=<SOME_USER>
+
+LP 1449940 has issues
+
