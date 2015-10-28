@@ -1,3 +1,2 @@
-lpuser1,jirauser1
-LP User2,jira.user2@example.com
-
+LaunchPad_ID:Apache_JIRA_ID
+LaunchPad_ID:apachetrafodion

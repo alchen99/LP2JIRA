@@ -47,8 +47,9 @@ class Blueprint:
 
     def __init__(self):
         #pdb.set_trace()
-        lp = Launchpad.login_anonymously('LaunchpadBugs.py', 'production', version="devel")
-        #lp = Launchpad.login_with('LaunchpadBugs.py','staging',credential_save_failed=no_credential)
+        #lp = Launchpad.login_anonymously('LaunchpadBugs.py', 'production', version="devel")
+        lp = Launchpad.login_with('LaunchpadBugs.py','production', version="devel", credential_save_failed=no_credential)
+
 
         # launchpad json
         lpJson = Launchpad.login_with('lplib.cookbook.json_fetcher', 'production', '.lplib-json_fetcher-cache',credential_save_failed=no_credential)
@@ -59,13 +60,147 @@ class Blueprint:
         print proj.display_name
 
         all_spec_collection = proj.all_specifications_collection_link
-        jResult = jBrowser.get(all_spec_collection) 
+        jResult = jBrowser.get(all_spec_collection)
         jResult = simplejson.loads(jResult)
+
+        # for debugging only
+
+        #with open('bp-short.json') as data_file:
+        #    jResult = simplejson.load(data_file)
+
+        # for debugging only
 
         print "Number of blueprints: " + str(jResult["total_size"])
 
         for entry in jResult["entries"]:
-            print "Blueprint name : " + entry["name"]
+            bpName = entry["name"].strip()
+            print ""
+            print "Blueprint name : " + bpName
+
+            if entry["lifecycle_status"] == "Complete":
+                bpLastUpdated = str(entry["date_completed"]).replace('T', ' ')
+                bpAssignedId = cleanID(entry["completer_link"])
+            elif entry["lifecycle_status"] == "Started":
+                bpLastUpdated = str(entry["date_started"]).replace('T', ' ')
+                bpAssignedId = cleanID(entry["starter_link"])
+            else:
+                bpLastUpdated = str(entry["date_created"]).replace('T', ' ')
+                bpAssignedId = None
+
+            print "Last updated : " + bpLastUpdated
+
+            # check if bug has been downloaded earlier
+            xmlBP = LPXmlDoc(bpName, "bp")
+
+            if xmlBP.doesXmlFileExist(bpName, bpLastUpdated) == False:
+                # get BP owner
+                bpOwnerID = cleanID(entry["owner_link"])
+                bpOwner = lp.people(bpOwnerID)
+                bpOwner = bpOwner.display_name
+
+                # get BP assignee
+                if bpAssignedId is None:
+                    bpAssignedTo = ""
+                else:
+                    bpAssignedTo = lp.people(bpAssignedId)
+                    bpAssignedTo = bpAssignedTo.display_name
+
+                # get BP milestone
+                if type(entry["milestone_link"]) is not types.NoneType:
+                    bpMilestoneLink = entry["milestone_link"]
+
+                    bpResult = jBrowser.get(bpMilestoneLink)
+                    bpResult = simplejson.loads(bpResult)
+                    bpMilestoneTitle = bpResult["title"].strip()
+                    bpMilestoneTitle = bpMilestoneTitle[11:]
+                    if bpMilestoneTitle.endswith('Beta"'):
+                        bpMilestoneTitle = bpMilestoneTitle[:-7]
+                else:
+                    bpMilestoneLink = ""
+                    bpMilestoneTitle = ""
+
+                # get BP status
+                bpStatus = entry["implementation_status"]
+                if bpStatus.lower() in ["unknown", "not started", "informational"]:
+                    bpStatus = "Open"
+                elif bpStatus.lower() in ["deferred", "needs infrastructure", "blocked"]:
+                    bpStatus = "Later"
+                elif bpStatus.lower() in ["started", "slow progress", "good progress", "needs code review"]:
+                    bpStatus = "In Progress"
+                elif bpStatus.lower() in ["beta available", "deployment"]:
+                    bpStatus = "Patch Available"
+
+                # BP importance map
+                bp_importance_map = {'Essential':'Blocker', 'High':'Critical', 'Medium':'Major', 'Low':'Minor', 'Undefined':'Major'}
+                bpImportance = bp_importance_map[entry["priority"]]
+
+                # try to guess component based on BP title
+                bpComponent = ""
+                if bpName.startswith("infra-"):
+                    bpComponent = "Build Infrastructure"
+                elif bpName.startswith("cmp-"):
+                    bpComponent = "sql-cmp"
+                elif bpName.startswith("security-"):
+                    bpComponent = "sql-security"
+                elif bpName.startswith("dtm-"):
+                    bpComponent = "dtm"
+
+                # add to xmlBP
+                xmlBP.addNode("date_last_updated", bpLastUpdated, "launchpad-bp")
+                xmlBP.addNode("all_bp_api_link", proj.all_specifications_collection_link, "api_links")
+                xmlBP.addNode("bp_api_link", entry["self_link"], "api_links")
+                xmlBP.addNode("bp_web_link", entry["web_link"], "api_links")
+                xmlBP.addNode("bp_owner_link", entry["owner_link"], "api_links")
+                xmlBP.addNode("linked_branches_collection_link", entry["linked_branches_collection_link"], "api_links")
+                xmlBP.addNode("bugs_collection_link", entry["bugs_collection_link"], "api_links")
+                xmlBP.addNode("owner", bpOwner, "launchpad-bp")
+                xmlBP.addNode("assignee", bpAssignedTo, "launchpad-bp")
+                xmlBP.addNode("milestone_link", bpMilestoneLink, "api_links")
+                # dependencies_collection_link returns junk
+                xmlBP.addNode("dependencies_collection_link", entry["dependencies_collection_link"], "api_links")
+                xmlBP.addNode("milestone_title", bpMilestoneTitle, "launchpad-bp")
+                xmlBP.addNode("title", entry["title"], "launchpad-bp")
+                xmlBP.addNode("status", bpStatus, "launchpad-bp")
+                xmlBP.addNode("importance", bpImportance, "launchpad-bp")
+                xmlBP.addNode("created", str(entry["date_created"]).replace('T', ' '), "launchpad-bp")
+                xmlBP.addNode("component", bpComponent, "launchpad-bp")
+                xmlBP.addCData("description", entry["summary"], "launchpad-bp")
+
+                # add whiteboard entry to comments
+                if type(entry["whiteboard"]) is not types.NoneType and entry["whiteboard"] != entry["summary"]:
+                    xmlBP.addComment(str(entry["date_created"]).replace('T', ' '), entry["self_link"], bpOwner, "Whiteboard", entry["whiteboard"])
+
+                # get branches
+                branchResult = jBrowser.get(entry["linked_branches_collection_link"])
+                branchResult = simplejson.loads(branchResult)
+
+                for bEntry in branchResult["entries"]:
+                    branchlink = bEntry["branch_link"]
+                    bresult = jBrowser.get(branchlink)
+                    bresult = simplejson.loads(bresult)
+                    displayname = bresult["display_name"]
+                    xmlBP.addBranch(displayname)
+
+                # get linked bugs
+                bugsCResult = jBrowser.get(entry["bugs_collection_link"])
+                bugsCResult = simplejson.loads(bugsCResult)
+
+                for lbEntry in bugsCResult["entries"]:
+                    bugId = lbEntry["id"]
+                    bugTitle = lbEntry["title"]
+                    print "Linked bug : " + str(bugId)
+                    xmlBP.addLinkedBugs(str(bugId), bugTitle)
+
+                # get work items
+                if type(entry["workitems_text"]) is not types.NoneType:
+                    workItemsList = [s.strip().split(':') for s in entry["workitems_text"].splitlines()]
+                    for i in xrange(1, len(workItemsList)):
+                        wiProgress = workItemsList[i][1].strip()
+                        print "Work item : " + workItemsList[i][0]
+                        print "Work item progress : " + wiProgress
+                        xmlBP.addWorkItems(workItemsList[i][0].strip(), wiProgress)
+
+                xmlBP.writeToFile(bpName)
 
     
 class Bug:
@@ -83,13 +218,11 @@ class Bug:
 
         p = launchpad.projects[CONST_TEAM]
         print p.display_name
-        #bugTasks = p.searchTasks(search_text="file formats")
-        bugTasks = p.searchTasks(status=["Fix Released"],tags=["infrastructure"],search_text="CDN")
-        #bugTasks = p.searchTasks(tags=["infrastructure"])
-        #bugTasks = p.searchTasks(status=["Incomplete (with response)","Incomplete (without response)"])
-        #bugTasks = p.searchTasks(status=["New","Incomplete","Opinion","Invalid","Won't Fix","Expired","Confirmed","Triaged","In Progress","Fix Committed","Fix Released","Incomplete (with response)","Incomplete (without response)"])
-        #bugTasks = p.searchTasks(status=["New","Confirmed","Fix Committed"],information_type=['Public','Public Security','Private Security','Private','Proprietary','Embargoed'])
+        bugTasks = p.searchTasks(status=["New","Incomplete","Opinion","Invalid","Won't Fix","Expired","Confirmed","Triaged","In Progress","Fix Committed","Fix Released","Incomplete (with response)","Incomplete (without response)"])
         #bugTasks = p.searchTasks(status=["New","Incomplete","Opinion","Invalid","Won't Fix","Expired","Confirmed","Triaged","In Progress","Fix Committed","Fix Released","Incomplete (with response)","Incomplete (without response)"],tags=['infrastructure'])
+        #bugTasks = p.searchTasks(status=["New","Incomplete","Opinion","Invalid","Won't Fix","Expired","Confirmed","Triaged","In Progress","Fix Committed","Fix Released","Incomplete (with response)","Incomplete (without response)"],search_text="mxosrvrs hung")
+        #bugTasks = p.searchTasks(search_text="mxosrvrs hung")
+        #bugTasks = p.searchTasks(status=["Fix Released"],tags=["infrastructure"],search_text="CDN")
         
         print "Number of bugs: " + str(len(bugTasks))
         bugHasAttachments = 0
@@ -119,8 +252,8 @@ class Bug:
                 bugTargetName = bugTaskTargetName
 
             # check if this has been downloaded earlier already
-            bugLastUpdated = bug.date_last_updated
-            xmlBug = BugXmlDoc(bugId)
+            bugLastUpdated = str(bug.date_last_updated).replace('T', ' ')
+            xmlBug = LPXmlDoc(bugId)
 
             if xmlBug.doesXmlFileExist(bugId, bugLastUpdated) == False:
                 xmlBug.addNode("date_last_updated", str(bugLastUpdated))
@@ -152,7 +285,11 @@ class Bug:
 
                     result = browser.get(milestone_link) 
                     result = simplejson.loads(result)
-                    milestone_title = result["title"]
+
+                    milestone_title = result["title"].strip()
+                    milestone_title = milestone_title[11:]
+                    if milestone_title.endswith(' "Beta"'):
+                        milestone_title = milestone_title[:-7]
                 else :
                     milestone_link = ""
                     milestone_title = ""
@@ -183,7 +320,7 @@ class Bug:
                 xmlBug.addNode("owner", reportedBy)
                 xmlBug.addNode("assignee", assignedTo)
                 xmlBug.addNode("milestone_link", milestone_link, "api_links")
-                xmlBug.addNode("milestone_title", milestone_title[11:])
+                xmlBug.addNode("milestone_title", milestone_title)
                 xmlBug.addNode("duplicate_link", duplicate_link)
                 xmlBug.addNode("duplicate_bug_id", duplicateBugId)
 
@@ -191,30 +328,38 @@ class Bug:
                 bugStatus = bugTask.status
                 if bugTask.status.startswith("Incomplete"):
                     bugStatus = "Incomplete"
+                elif bugTask.status.startswith("New"):
+                    bugStatus = "Open"
                 
                 # Bug Importance Map
-                bug_importance_map = {'Critical':'Blocker', 'High':'Critical', 'Medium':'Major', 'Low':'Minor'}
-                if bugTask.importance == "Undecided" or bugTask.importance == "Wishlist":
+                bug_importance_map = {'Critical':'Blocker', 'High':'Critical', 'Medium':'Major', 'Low':'Minor', 'Undecided':'Major'}
+                if bugTask.importance == "Wishlist":
                     bugImportance = bugTask.importance
                 else:
                     bugImportance = bug_importance_map[bugTask.importance]
                     
-                dateCreated = bugTask.date_created
+                dateCreated = str(bugTask.date_created).replace('T', ' ')
 
                 xmlBug.addNode("title", bugTitle)
                 xmlBug.addNode("status", bugStatus)
                 xmlBug.addNode("importance", bugImportance)
-                xmlBug.addNode("created", str(dateCreated))
+                xmlBug.addNode("created", dateCreated)
 
                 if bug.tags != None :
                     print "Tags: " + ', '.join(bug.tags)
-                    label_tags = ['data-corruption', 'regression', 'low-hanging-fruit', 'ops', 'performance', 'crash', 'hang']
+                    # component map
+                    component_tags = ['sql-exe', 'sql-cmp', 'installer', 'sql-security', 'client-jdbc-t2', 
+                                      'connectivity-mxosrvr', 'dtm', 'foundation', 'client-odbc-linux', 
+                                      'connectivity-dcs', 'connectivity-general', 'client-jdbc-t4', 
+                                      'client-odbc-windows', 'sql-cmu', 'dev-environment', 'db-utility-odb', 
+                                      'sql-general', 'client-ci', 'db-utility-backup', 'connectivity-odb', 
+                                      'db-utility-restore', 'documentation']
                     for tag in bug.tags:
                         if tag == "infrastructure":
                             xmlBug.addNode("component", "Build Infrastructure")
-                        elif tag not in label_tags:
+                        elif tag in component_tags:
                             xmlBug.addNode("component", tag)
-                        elif tag in label_tags:
+                        elif tag not in component_tags:
                             xmlBug.addNode("label", tag)
                 else:
                     print "Tags: None"
@@ -252,7 +397,7 @@ class Bug:
                             whatchanged = entry["whatchanged"]
 
                         if (entry["datechanged"] != None):
-                            datechanged = entry["datechanged"]
+                            datechanged = str(entry["datechanged"]).replace('T', ' ')
 
                         xmlBug.addActivity(datechanged, oldvalue, newvalue, whatchanged, person, eMessage)
 
@@ -287,7 +432,7 @@ class Bug:
                             content = entry["content"]
 
                         if (entry["date_created"] != None):
-                            datecreated = entry["date_created"]
+                            datecreated = str(entry["date_created"]).replace('T', ' ')
 
                         if (content != bug.description): #description is also stored as a comment
                             xmlBug.addComment(datecreated, selflink, person, subject, content)
@@ -323,11 +468,11 @@ class Bug:
                                 if (attachment.message_link == message.self_link):
                                     print "Attachment file link is ",attachment.data_link
                                     personID = cleanID(message.owner_link)
-                                    xmlBug.addMessage(str(message.date_created), launchpad.people[personID].display_name, message.content, attachment)
+                                    xmlBug.addMessage(str(message.date_created).replace('T', ' '), launchpad.people[personID].display_name, message.content, attachment)
                                     break
                         else:
                             personID = cleanID(message.owner_link)
-                            xmlBug.addMessage(str(message.date_created), launchpad.people[personID].display_name, message.content)
+                            xmlBug.addMessage(str(message.date_created).replace('T', ' '), launchpad.people[personID].display_name, message.content)
 
                 if bug.message_count > maxMessages:
                     maxMessages = bug.message_count
@@ -337,15 +482,14 @@ class Bug:
         print "Bugs with attachements: %s" % (bugHasAttachments)
         print "Max messages on one bug: %s" % (maxMessages)
     
-        if self.createCsv:
-            UnicodeWriter.createJiraCsv(csvWriter, "trafodion", bugTitle, assignedTo, reportedBy, bug.description, "", bugStatus, bugStatus, messages, str(dateCreated), "", "", "bug", "", "launchpad", bugImportance, bugStatus, bugStatus, "", "", "")
 
+class LPXmlDoc:
+    lptype = None
 
-class BugXmlDoc:
-
-    def __init__(self, id):
+    def __init__(self, id, lp_type="bug"):
         # create root
-        self.xmlDoc = xml.dom.minidom.getDOMImplementation().createDocument(None,"launchpad-bug",None)
+        self.lptype = lp_type
+        self.xmlDoc = xml.dom.minidom.getDOMImplementation().createDocument(None,"launchpad-" + self.lptype,None)
         self.xmlDoc.documentElement.setAttribute("id", str(id)) 
 
     def addAttribute(self, nodeName, attribName, attribValue):
@@ -355,7 +499,7 @@ class BugXmlDoc:
     def addActivity(self, datechanged, oldvalue, newvalue, whatchanged, person, message):
         if self.xmlDoc.getElementsByTagName("activities").length < 1:
             activities = self.xmlDoc.createElement("activities")
-            parent = self.xmlDoc.getElementsByTagName("launchpad-bug")[0]
+            parent = self.xmlDoc.getElementsByTagName("launchpad-" + self.lptype)[0]
             parent.appendChild(activities)
         else:
             activities = self.xmlDoc.getElementsByTagName("activities")[0]
@@ -387,7 +531,7 @@ class BugXmlDoc:
     def addComment(self, datecreated, selflink, person, subject, content):
         if self.xmlDoc.getElementsByTagName("comments").length < 1:
             comments = self.xmlDoc.createElement("comments")
-            parent = self.xmlDoc.getElementsByTagName("launchpad-bug")[0]
+            parent = self.xmlDoc.getElementsByTagName("launchpad-" + self.lptype)[0]
             parent.appendChild(comments)
         else:
             comments = self.xmlDoc.getElementsByTagName("comments")[0]
@@ -412,19 +556,19 @@ class BugXmlDoc:
     def addDuplicate(self, bugId):
         if self.xmlDoc.getElementsByTagName("duplicates").length < 1:
             duplicates = self.xmlDoc.createElement("duplicates")
-            parent = self.xmlDoc.getElementsByTagName("launchpad-bug")[0]
+            parent = self.xmlDoc.getElementsByTagName("launchpad-" + self.lptype)[0]
             parent.appendChild(duplicates)
         else:
             duplicates = self.xmlDoc.getElementsByTagName("duplicates")[0]
 
-        duplicateBug = self.xmlDoc.createElement("bug")
+        duplicateBug = self.xmlDoc.createElement(self.lptype)
         duplicateBug.setAttribute("id", bugId)
         duplicates.appendChild(duplicateBug)
 
     def addBranch(self, branchname):
         if self.xmlDoc.getElementsByTagName("branches").length < 1:
             branches = self.xmlDoc.createElement("branches")
-            parent = self.xmlDoc.getElementsByTagName("launchpad-bug")[0]
+            parent = self.xmlDoc.getElementsByTagName("launchpad-" + self.lptype)[0]
             parent.appendChild(branches)
         else:
             branches = self.xmlDoc.getElementsByTagName("branches")[0]
@@ -434,10 +578,48 @@ class BugXmlDoc:
         branch.appendChild(branchTxt)
         branches.appendChild(branch)
 
+    def addLinkedBugs(self, bugId, bugTitle):
+        if self.xmlDoc.getElementsByTagName("linked_bugs").length < 1:
+            linkedBugs = self.xmlDoc.createElement("linked_bugs")
+            parent = self.xmlDoc.getElementsByTagName("launchpad-" + self.lptype)[0]
+            parent.appendChild(linkedBugs)
+        else:
+            linkedBugs = self.xmlDoc.getElementsByTagName("linked_bugs")[0]
+
+        linkedBug = self.xmlDoc.createElement("linked_bug")
+        bugIdElement = self.xmlDoc.createElement("linked_bug_id")
+        bugIdTxt = self.xmlDoc.createTextNode(bugId)
+        bugIdElement.appendChild(bugIdTxt)
+        bugTitleElement = self.xmlDoc.createElement("linked_bug_title")
+        bugTitleTxt = self.xmlDoc.createTextNode(bugTitle)
+        bugTitleElement.appendChild(bugTitleTxt)
+        linkedBug.appendChild(bugIdElement)
+        linkedBug.appendChild(bugTitleElement)
+        linkedBugs.appendChild(linkedBug)
+
+    def addWorkItems(self, workItemName, workItemProgress):
+        if self.xmlDoc.getElementsByTagName("work_items").length < 1:
+            workItems = self.xmlDoc.createElement("work_items")
+            parent = self.xmlDoc.getElementsByTagName("launchpad-" + self.lptype)[0]
+            parent.appendChild(workItems)
+        else:
+            workItems = self.xmlDoc.getElementsByTagName("work_items")[0]
+
+        workItem = self.xmlDoc.createElement("work_item")
+        workItemNameElement = self.xmlDoc.createElement("work_item_name")
+        workItemNameTxt = self.xmlDoc.createTextNode(workItemName)
+        workItemNameElement.appendChild(workItemNameTxt)
+        workItemProgressElement = self.xmlDoc.createElement("work_item_progress")
+        workItemProgressTxt = self.xmlDoc.createTextNode(workItemProgress)
+        workItemProgressElement.appendChild(workItemProgressTxt)
+        workItem.appendChild(workItemNameElement)
+        workItem.appendChild(workItemProgressElement)
+        workItems.appendChild(workItem)
+
     def addMessage(self, created, owner, content, attachment = None):
         if self.xmlDoc.getElementsByTagName("messages").length < 1:
             messages = self.xmlDoc.createElement("messages")
-            parent = self.xmlDoc.getElementsByTagName("launchpad-bug")[0]
+            parent = self.xmlDoc.getElementsByTagName("launchpad-" + self.lptype)[0]
             parent.appendChild(messages)
         else:
             messages = self.xmlDoc.getElementsByTagName("messages")[0]
@@ -460,9 +642,15 @@ class BugXmlDoc:
 
             print "Attachment title: ",attachment.title
             f_in = attachment.data.open()
-            print "Attachment filename: ",f_in.filename
 
-            fileName = "LPexportBug" + self.xmlDoc.documentElement.getAttribute("id") + "_" + f_in.filename
+            # filenames with space, plus and other symbols need to be substituted
+            fName = f_in.filename
+            fixChars = " +"
+            for f in fixChars:
+                fName = fName.replace(f, '_')
+            print "Attachment filename: ",fName
+
+            fileName = "LPexportBug" + self.xmlDoc.documentElement.getAttribute("id") + "_" + fName
 
             if not os.path.exists(os.path.normpath(CONST_TEAM + "/attachment")):
                 os.makedirs(os.path.normpath(CONST_TEAM + "/attachment"))
@@ -495,7 +683,7 @@ class BugXmlDoc:
 
         if self.xmlDoc.getElementsByTagName(parentName).length < 1:
             parent = self.xmlDoc.createElement(parentName)
-            root = self.xmlDoc.getElementsByTagName("launchpad-bug")[0]
+            root = self.xmlDoc.getElementsByTagName("launchpad-" + self.lptype)[0]
             root.appendChild(parent)
         else:
             parent = self.xmlDoc.getElementsByTagName(parentName)[0]
@@ -510,7 +698,10 @@ class BugXmlDoc:
         parent.appendChild(element)
 
     def getFileName(self, id):
-        return "LPexportBug" + str(id) + ".xml"
+        if self.lptype == "bug":
+            return "LPexportBug-" + str(id) + ".xml"
+        elif self.lptype == "bp":
+            return "LPexportBP-" + str(id) + ".xml" 
 
     def doesXmlFileExist(self, id, lastUpdated):
         try:
@@ -523,7 +714,10 @@ class BugXmlDoc:
             return False
 
         try:
-            if dateutil.parser.parse(checkDoc.getElementsByTagName("date_last_updated")[0].firstChild.nodeValue) == lastUpdated:
+            docLastUpdated = str(checkDoc.getElementsByTagName("date_last_updated")[0].firstChild.nodeValue).replace(' ', 'T')
+            lastUpdated = str(lastUpdated).replace(' ', 'T')
+
+            if dateutil.parser.parse(docLastUpdated) == dateutil.parser.parse(lastUpdated):
                 print "Bug hasn't changed since last fetched - no need to refetch, id: " + str(id)
                 return True
             else:
@@ -546,123 +740,6 @@ class BugXmlDoc:
             logging.exception(e)
 
 
-class UnicodeWriter:
-    """
-    A CSV writer which will write rows to CSV file "f",
-    which is encoded in the given encoding.
-    """
-
-    def __init__(self, f, dialect=csv.excel, encoding="utf-8", **kwds):
-        # Redirect output to a queue
-        self.queue = cStringIO.StringIO()
-        self.writer = csv.writer(self.queue, dialect=dialect, **kwds)
-        self.stream = f
-        self.encoder = codecs.getincrementalencoder(encoding)()
-
-    def writerow(self, row):
-        self.writer.writerow([s.encode("utf-8") for s in row])
-        # Fetch UTF-8 output from the queue ...
-        data = self.queue.getvalue()
-        data = data.decode("utf-8")
-        # ... and reencode it into the target encoding
-        data = self.encoder.encode(data)
-        # write to the target stream
-        self.stream.write(data)
-        # empty queue
-        self.queue.truncate(0)
-
-    def writerows(self, rows):
-        for row in rows:
-            self.writerow(row)
-
-    def createJiraCsv(self, csvWriter, project, summary, assignee, reporter, description, components, affectsVersion, fixVersion, comments, dateCreated, dateModified, dueDate, issueType, subTasks, labels, priority, resolution, status, originalEstimate, remainingEstimate, timeSpent):
-        
-        """
-        Project
-        Summary
-        Component(s)
-        Affects Version(s)
-        Fix Version(s)
-        Comment Body - You can import issues with multiple comments by entering each comment in a separate column.
-        Date Created
-        Date Modified
-        Due Date
-        Issue Type
-        Sub-Tasks 
-        Labels
-        Priority
-        Resolution
-        Status
-        Original Estimate
-        Remaining Estimate
-        Time Spent
-        """
-        
-        commentColumns = 29
-        commentsFixed = []
-        
-        if (len(comments) < commentColumns):
-            for comment in comments:
-                commentsFixed.append(comment)
-
-            for i in range(1, commentColumns - len(comments)):
-                commentsFixed.append("");
-
-        row = []
-        row1 = []
-        row.append(project)
-        row1.append("project")
-        row.append(summary)
-        row1.append("summary")
-        row.append(assignee)
-        row1.append("assignee")
-        row.append(reporter)
-        row1.append("reporter")
-        row.append(description)
-        row1.append("description")
-        row.append(components)
-        row1.append("components")
-        row.append(affectsVersion)
-        row1.append("affects version(s)")
-        row.append(fixVersion)
-        row1.append("fix version(s)")
-
-        for comment in commentsFixed:
-            row.append(comment)
-            row1.append("comment")
-            
-        row.append(dateCreated)
-        row1.append("Date Created")
-        row.append(dateModified)
-        row1.append("Date Modified")
-        row.append(dueDate)
-        row1.append("Due Date")
-        row.append(issueType)
-        row1.append("Issue Type")
-        row.append(subTasks)
-        row1.append("Sub-Tasks")
-        row.append(labels)
-        row1.append("Labels")
-        row.append(priority)
-        row1.append("Priority")
-        row.append(resolution)
-        row1.append("Resolution")
-        row.append(status)
-        row1.append("Status")
-        row.append(originalEstimate)
-        row1.append("Original Estimate")
-        row.append(remainingEstimate)
-        row1.append("Remaining Estimate")
-        row.append(timeSpent)
-        row1.append("Time Spent")
-
-        if self.row1written == False:
-            csvWriter.writerow(row1)
-            self.row1written = True
-        
-        csvWriter.writerow(row)
-
-
 #----------------------------------------------------------------------------
 # start the script
 #----------------------------------------------------------------------------
@@ -671,10 +748,10 @@ class UnicodeWriter:
 option_list = [
     # No need to ad '-h' or '-help', optparse automatically adds these options
 
-    optparse.make_option('', '--bug', action='store_true', dest='lpbugs', default=True,
-                         help=''),
+    optparse.make_option('', '--bug', action='store_true', dest='lpbugs', default=False,
+                         help='Process Launchpad Bugs'),
     optparse.make_option('', '--bp', action='store_true', dest='lpbps', default=False,
-                         help='')
+                         help='Process Launchpad Blueprints')
 ]
 
 usage = 'usage: %prog [-h|--help|<options>]'
@@ -686,10 +763,13 @@ parser = optparse.OptionParser(usage=usage, option_list=option_list)
 
 # we are not expecting args right now
 if args:
-    parse.error('Invalid argment(s) found: ' + str(args))
+    parser.error('Invalid argment(s) found: ' + str(args))
 
 # check options
-if options.lpbugs:
+if not options.lpbugs and not options.lpbps:
+    parser.print_help()
+    sys.exit(1)
+elif options.lpbugs:
     print "INFO: Processing Launchpad Bugs ..."
     Bug()
 elif options.lpbps:
